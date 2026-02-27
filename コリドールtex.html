@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Quoridor - Advanced</title>
+
+<style>
+body{
+  margin:0;
+  background:#181b20;
+  color:#eee;
+  font-family:system-ui, sans-serif;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+
+h1{
+  font-weight:300;
+  letter-spacing:4px;
+  margin:15px 0;
+}
+
+#game{
+  display:flex;
+  align-items:center;
+  gap:15px;
+}
+
+.side{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+
+.wall-stock{
+  width:14px;
+  height:60px;
+  background:#ffffff;
+  border-radius:4px;
+  cursor:grab;
+  opacity:.9;
+}
+
+#board-wrapper{
+  position:relative;
+}
+
+#board{
+  display:grid;
+  grid-template-columns:repeat(9,1fr);
+  grid-template-rows:repeat(9,1fr);
+  width:min(90vw,520px);
+  aspect-ratio:1;
+  gap:4px;
+}
+
+.cell{
+  background:#2a2f38;
+  border-radius:6px;
+  position:relative;
+}
+
+.pawn{
+  width:65%;
+  height:65%;
+  border-radius:50%;
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  transition:all .25s ease;
+}
+
+.active{
+  box-shadow:0 0 0 4px rgba(255,255,255,0.8);
+}
+
+.p1{ background:#c9a227; }
+.p2{ background:#3f88c5; }
+
+.wall{
+  position:absolute;
+  background:#ffffff;
+  border-radius:4px;
+  opacity:0;
+  animation:fadeIn .2s forwards;
+}
+
+@keyframes fadeIn{
+  to{ opacity:1; }
+}
+
+#status{
+  margin-top:10px;
+  font-size:14px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>QUORIDOR</h1>
+
+<div id="game">
+  <div id="p1walls" class="side"></div>
+
+  <div id="board-wrapper">
+    <div id="board"></div>
+  </div>
+
+  <div id="p2walls" class="side"></div>
+</div>
+
+<div id="status"></div>
+
+<script>
+const size=9;
+let board=document.getElementById("board");
+let wrapper=document.getElementById("board-wrapper");
+
+let current=1;
+let wallsLeft={1:10,2:10};
+let pawns={1:{x:4,y:0},2:{x:4,y:8}};
+let walls=[];
+let draggingWall=null;
+
+/* ===== 描画 ===== */
+
+function drawBoard(){
+  board.innerHTML="";
+  for(let y=0;y<size;y++){
+    for(let x=0;x<size;x++){
+      let cell=document.createElement("div");
+      cell.className="cell";
+      cell.dataset.x=x;
+      cell.dataset.y=y;
+      cell.onclick=()=>movePawn(x,y);
+      board.appendChild(cell);
+    }
+  }
+  drawPawns();
+  drawWalls();
+  drawStocks();
+  updateStatus();
+}
+
+function drawPawns(){
+  for(let p=1;p<=2;p++){
+    let pos=pawns[p];
+    let cell=board.children[pos.y*9+pos.x];
+    let pawn=document.createElement("div");
+    pawn.className="pawn p"+p;
+    if(p===current) pawn.classList.add("active");
+    cell.appendChild(pawn);
+  }
+}
+
+function drawWalls(){
+  walls.forEach(w=>{
+    let div=document.createElement("div");
+    div.className="wall";
+    let cellSize=board.clientWidth/9;
+
+    if(w.dir==="h"){
+      div.style.width=(cellSize*2+4)+"px";
+      div.style.height="8px";
+      div.style.left=(w.x*cellSize)+"px";
+      div.style.top=(w.y*cellSize-4)+"px";
+    }else{
+      div.style.height=(cellSize*2+4)+"px";
+      div.style.width="8px";
+      div.style.left=(w.x*cellSize-4)+"px";
+      div.style.top=(w.y*cellSize)+"px";
+    }
+
+    wrapper.appendChild(div);
+  });
+}
+
+function drawStocks(){
+  document.getElementById("p1walls").innerHTML="";
+  document.getElementById("p2walls").innerHTML="";
+
+  for(let p=1;p<=2;p++){
+    for(let i=0;i<wallsLeft[p];i++){
+      let w=document.createElement("div");
+      w.className="wall-stock";
+      if(p!==current) w.style.opacity=".3";
+      w.onpointerdown=(e)=>startDragWall(e,p);
+      document.getElementById("p"+p+"walls").appendChild(w);
+    }
+  }
+}
+
+/* ===== 駒移動 ===== */
+
+function movePawn(x,y){
+  let dx=Math.abs(pawns[current].x-x);
+  let dy=Math.abs(pawns[current].y-y);
+  if(dx+dy!==1) return;
+  if(isBlocked(pawns[current].x,pawns[current].y,x,y)) return;
+
+  pawns[current]={x,y};
+
+  if((current==1&&y==8)||(current==2&&y==0)){
+    setTimeout(()=>alert("Player "+current+" 勝利！"),200);
+    setTimeout(()=>location.reload(),500);
+  }
+
+  current=current==1?2:1;
+  clearWalls();
+  drawBoard();
+}
+
+/* ===== 壁ドラッグ ===== */
+
+function startDragWall(e,player){
+  if(player!==current) return;
+  draggingWall={player};
+  document.addEventListener("pointerup",dropWall);
+}
+
+function dropWall(e){
+  if(!draggingWall) return;
+
+  let rect=board.getBoundingClientRect();
+  let x=e.clientX-rect.left;
+  let y=e.clientY-rect.top;
+
+  if(x<0||y<0||x>rect.width||y>rect.height){
+    draggingWall=null;
+    return;
+  }
+
+  let cellSize=board.clientWidth/9;
+  let gridX=Math.floor(x/cellSize);
+  let gridY=Math.floor(y/cellSize);
+
+  let dir = (x%cellSize > y%cellSize) ? "h" : "v";
+
+  if(canPlaceWall(gridX,gridY,dir)){
+    walls.push({x:gridX,y:gridY,dir});
+    wallsLeft[current]--;
+    current=current==1?2:1;
+  }
+
+  draggingWall=null;
+  clearWalls();
+  drawBoard();
+}
+
+function clearWalls(){
+  wrapper.querySelectorAll(".wall").forEach(w=>w.remove());
+}
+
+/* ===== ロジック ===== */
+
+function isBlocked(x1,y1,x2,y2){
+  return walls.some(w=>{
+    if(w.dir==="h"){
+      if(y1===w.y && y2===w.y+1 && x1>=w.x && x1<w.x+2)return true;
+      if(y2===w.y && y1===w.y+1 && x1>=w.x && x1<w.x+2)return true;
+    }
+    if(w.dir==="v"){
+      if(x1===w.x && x2===w.x+1 && y1>=w.y && y1<w.y+2)return true;
+      if(x2===w.x && x1===w.x+1 && y1>=w.y && y1<w.y+2)return true;
+    }
+    return false;
+  });
+}
+
+function canPlaceWall(x,y,dir){
+  if(dir==="h"&&(y<=0||x>=8))return false;
+  if(dir==="v"&&(x<=0||y>=8))return false;
+
+  walls.push({x,y,dir});
+  let ok=pathExists(1)&&pathExists(2);
+  walls.pop();
+  return ok;
+}
+
+function pathExists(player){
+  let visited=new Set();
+  let queue=[pawns[player]];
+  while(queue.length){
+    let {x,y}=queue.shift();
+    if((player==1&&y==8)||(player==2&&y==0))return true;
+    visited.add(x+","+y);
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{
+      let nx=x+dx,ny=y+dy;
+      if(nx>=0&&nx<9&&ny>=0&&ny<9){
+        if(!visited.has(nx+","+ny)&&!isBlocked(x,y,nx,ny)){
+          queue.push({x:nx,y:ny});
+        }
+      }
+    });
+  }
+  return false;
+}
+
+function updateStatus(){
+  document.getElementById("status").innerText=
+  `Player ${current} のターン`;
+}
+
+drawBoard();
+</script>
+</body>
+</html>
