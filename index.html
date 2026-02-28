@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Quoridor - Advanced</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quoridor CPU</title>
 
 <style>
 body{
@@ -25,22 +25,10 @@ h1{
 #game{
   display:flex;
   align-items:center;
-  gap:15px;
 }
 
-.side{
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-}
-
-.wall-stock{
-  width:14px;
-  height:60px;
-  background:#ffffff;
-  border-radius:4px;
-  cursor:grab;
-  opacity:.9;
+.side-space{
+  width:min(90vw,520px)/9;
 }
 
 #board-wrapper{
@@ -60,6 +48,7 @@ h1{
   background:#2a2f38;
   border-radius:6px;
   position:relative;
+  cursor:pointer;
 }
 
 .pawn{
@@ -70,15 +59,15 @@ h1{
   top:50%;
   left:50%;
   transform:translate(-50%,-50%);
-  transition:all .25s ease;
+  transition:.25s ease;
 }
 
 .active{
   box-shadow:0 0 0 4px rgba(255,255,255,0.8);
 }
 
-.p1{ background:#c9a227; }
-.p2{ background:#3f88c5; }
+.p1{ background:#c9a227; } /* CPU */
+.p2{ background:#3f88c5; } /* Human */
 
 .wall{
   position:absolute;
@@ -88,29 +77,19 @@ h1{
   animation:fadeIn .2s forwards;
 }
 
-@keyframes fadeIn{
-  to{ opacity:1; }
-}
+@keyframes fadeIn{ to{opacity:1;} }
 
-#status{
-  margin-top:10px;
-  font-size:14px;
-}
+#status{ margin-top:10px; }
 </style>
 </head>
-
 <body>
 
 <h1>QUORIDOR</h1>
 
 <div id="game">
-  <div id="p1walls" class="side"></div>
-
-  <div id="board-wrapper">
-    <div id="board"></div>
-  </div>
-
-  <div id="p2walls" class="side"></div>
+  <div id="leftSpace"></div>
+  <div id="board-wrapper"><div id="board"></div></div>
+  <div id="rightSpace"></div>
 </div>
 
 <div id="status"></div>
@@ -120,29 +99,36 @@ const size=9;
 let board=document.getElementById("board");
 let wrapper=document.getElementById("board-wrapper");
 
-let current=1;
+let current=1; // 1=CPU(orange)
 let wallsLeft={1:10,2:10};
 let pawns={1:{x:4,y:0},2:{x:4,y:8}};
 let walls=[];
-let draggingWall=null;
+
+/* ===== 余白を1マス幅に調整 ===== */
+function adjustSideSpace(){
+  let cellSize=board.clientWidth/9;
+  document.getElementById("leftSpace").style.width=cellSize+"px";
+  document.getElementById("rightSpace").style.width=cellSize+"px";
+}
+window.addEventListener("resize",()=>{drawBoard();});
 
 /* ===== 描画 ===== */
-
 function drawBoard(){
   board.innerHTML="";
+  wrapper.querySelectorAll(".wall").forEach(w=>w.remove());
+
   for(let y=0;y<size;y++){
     for(let x=0;x<size;x++){
       let cell=document.createElement("div");
       cell.className="cell";
-      cell.dataset.x=x;
-      cell.dataset.y=y;
-      cell.onclick=()=>movePawn(x,y);
+      cell.onclick=()=>humanMove(x,y);
       board.appendChild(cell);
     }
   }
+
   drawPawns();
   drawWalls();
-  drawStocks();
+  adjustSideSpace();
   updateStatus();
 }
 
@@ -174,88 +160,61 @@ function drawWalls(){
       div.style.left=(w.x*cellSize-4)+"px";
       div.style.top=(w.y*cellSize)+"px";
     }
-
     wrapper.appendChild(div);
   });
 }
 
-function drawStocks(){
-  document.getElementById("p1walls").innerHTML="";
-  document.getElementById("p2walls").innerHTML="";
+/* ===== 移動 ===== */
 
-  for(let p=1;p<=2;p++){
-    for(let i=0;i<wallsLeft[p];i++){
-      let w=document.createElement("div");
-      w.className="wall-stock";
-      if(p!==current) w.style.opacity=".3";
-      w.onpointerdown=(e)=>startDragWall(e,p);
-      document.getElementById("p"+p+"walls").appendChild(w);
+function humanMove(x,y){
+  if(current!==2) return;
+  if(validMove(2,x,y)){
+    pawns[2]={x,y};
+    endTurn();
+  }
+}
+
+function cpuTurn(){
+  if(current!==1) return;
+
+  setTimeout(()=>{
+    // 80% 移動 / 20% 壁
+    if(Math.random()<0.2 && wallsLeft[1]>0){
+      tryPlaceBlockingWall();
+    }else{
+      let move=shortestStep(1);
+      if(move) pawns[1]=move;
     }
-  }
+    endTurn();
+  },400);
 }
 
-/* ===== 駒移動 ===== */
-
-function movePawn(x,y){
-  let dx=Math.abs(pawns[current].x-x);
-  let dy=Math.abs(pawns[current].y-y);
-  if(dx+dy!==1) return;
-  if(isBlocked(pawns[current].x,pawns[current].y,x,y)) return;
-
-  pawns[current]={x,y};
-
-  if((current==1&&y==8)||(current==2&&y==0)){
-    setTimeout(()=>alert("Player "+current+" 勝利！"),200);
-    setTimeout(()=>location.reload(),500);
-  }
-
-  current=current==1?2:1;
-  clearWalls();
-  drawBoard();
-}
-
-/* ===== 壁ドラッグ ===== */
-
-function startDragWall(e,player){
-  if(player!==current) return;
-  draggingWall={player};
-  document.addEventListener("pointerup",dropWall);
-}
-
-function dropWall(e){
-  if(!draggingWall) return;
-
-  let rect=board.getBoundingClientRect();
-  let x=e.clientX-rect.left;
-  let y=e.clientY-rect.top;
-
-  if(x<0||y<0||x>rect.width||y>rect.height){
-    draggingWall=null;
+function endTurn(){
+  if(checkWin(current)){
+    setTimeout(()=>alert((current===1?"CPU":"YOU")+" 勝利！"),200);
+    setTimeout(()=>location.reload(),600);
     return;
   }
 
-  let cellSize=board.clientWidth/9;
-  let gridX=Math.floor(x/cellSize);
-  let gridY=Math.floor(y/cellSize);
-
-  let dir = (x%cellSize > y%cellSize) ? "h" : "v";
-
-  if(canPlaceWall(gridX,gridY,dir)){
-    walls.push({x:gridX,y:gridY,dir});
-    wallsLeft[current]--;
-    current=current==1?2:1;
-  }
-
-  draggingWall=null;
-  clearWalls();
+  current=current===1?2:1;
   drawBoard();
-}
-
-function clearWalls(){
-  wrapper.querySelectorAll(".wall").forEach(w=>w.remove());
+  if(current===1) cpuTurn();
 }
 
 /* ===== ロジック ===== */
+
+function validMove(player,x,y){
+  let dx=Math.abs(pawns[player].x-x);
+  let dy=Math.abs(pawns[player].y-y);
+  if(dx+dy!==1) return false;
+  if(isBlocked(pawns[player].x,pawns[player].y,x,y)) return false;
+  return true;
+}
+
+function checkWin(player){
+  return (player===1 && pawns[1].y===8) ||
+         (player===2 && pawns[2].y===0);
+}
 
 function isBlocked(x1,y1,x2,y2){
   return walls.some(w=>{
@@ -271,10 +230,54 @@ function isBlocked(x1,y1,x2,y2){
   });
 }
 
+/* ===== 最短1手（BFS） ===== */
+
+function shortestStep(player){
+  let goalRow = player===1?8:0;
+  let visited=new Set();
+  let queue=[[pawns[player],[]]];
+
+  while(queue.length){
+    let [pos,path]=queue.shift();
+    let key=pos.x+","+pos.y;
+    if(visited.has(key)) continue;
+    visited.add(key);
+
+    if(pos.y===goalRow){
+      return path[0];
+    }
+
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{
+      let nx=pos.x+dx, ny=pos.y+dy;
+      if(nx>=0&&nx<9&&ny>=0&&ny<9){
+        if(!isBlocked(pos.x,pos.y,nx,ny)){
+          queue.push([{x:nx,y:ny}, [...path,{x:nx,y:ny}]]);
+        }
+      }
+    });
+  }
+  return null;
+}
+
+/* ===== 簡易妨害壁 ===== */
+
+function tryPlaceBlockingWall(){
+  let target=pawns[2];
+  let dir="h";
+  let x=target.x;
+  let y=target.y-1;
+
+  if(canPlaceWall(x,y,dir)){
+    walls.push({x,y,dir});
+    wallsLeft[1]--;
+  }else{
+    let move=shortestStep(1);
+    if(move) pawns[1]=move;
+  }
+}
+
 function canPlaceWall(x,y,dir){
   if(dir==="h"&&(y<=0||x>=8))return false;
-  if(dir==="v"&&(x<=0||y>=8))return false;
-
   walls.push({x,y,dir});
   let ok=pathExists(1)&&pathExists(2);
   walls.pop();
@@ -282,16 +285,20 @@ function canPlaceWall(x,y,dir){
 }
 
 function pathExists(player){
+  let goalRow = player===1?8:0;
   let visited=new Set();
   let queue=[pawns[player]];
   while(queue.length){
-    let {x,y}=queue.shift();
-    if((player==1&&y==8)||(player==2&&y==0))return true;
-    visited.add(x+","+y);
+    let pos=queue.shift();
+    let key=pos.x+","+pos.y;
+    if(visited.has(key)) continue;
+    visited.add(key);
+    if(pos.y===goalRow) return true;
+
     [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{
-      let nx=x+dx,ny=y+dy;
+      let nx=pos.x+dx, ny=pos.y+dy;
       if(nx>=0&&nx<9&&ny>=0&&ny<9){
-        if(!visited.has(nx+","+ny)&&!isBlocked(x,y,nx,ny)){
+        if(!isBlocked(pos.x,pos.y,nx,ny)){
           queue.push({x:nx,y:ny});
         }
       }
@@ -302,10 +309,11 @@ function pathExists(player){
 
 function updateStatus(){
   document.getElementById("status").innerText=
-  `Player ${current} のターン`;
+  current===1?"CPUのターン":"あなたのターン";
 }
 
 drawBoard();
+cpuTurn(); // CPU先手
 </script>
 </body>
 </html>
